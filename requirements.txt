@@ -1,3 +1,4 @@
 azure-identity
 azure-core
 python-dotenv
+msal
