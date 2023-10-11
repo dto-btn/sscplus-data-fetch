@@ -1,5 +1,4 @@
 from azure.core.pipeline import Pipeline
-import pip_system_certs.wrapt_requests
 from azure.core.pipeline.transport import HttpRequest, HttpResponse
 from azure.core.pipeline.policies import BearerTokenCredentialPolicy, HttpLoggingPolicy, RedirectPolicy  
 from azure.core.pipeline.transport import RequestsTransport

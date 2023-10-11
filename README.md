@@ -30,3 +30,4 @@ Might need to run `Ctrl+Shift+P` in VSCode, type `Python: Create environment...`
 ## documentation
 
 * [function app in VSCode](https://learn.microsoft.com/en-ca/azure/azure-functions/functions-develop-vs-code?tabs=node-v3%2Cpython-v2%2Cisolated-process&pivots=programming-language-python)
+* [config client apps to access your services](https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-provider-aad?tabs=workforce-tenant#configure-client-apps-to-access-your-app-service)
