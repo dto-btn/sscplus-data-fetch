@@ -1,6 +1,9 @@
 azure-identity
 azure-core
+azure-keyvault-secrets
 python-dotenv
 msal
 llama-index
 bs4
+openai
+langchain
