@@ -2,3 +2,5 @@ azure-identity
 azure-core
 python-dotenv
 msal
+llama-index
+bs4

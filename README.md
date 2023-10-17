@@ -14,7 +14,7 @@ Etc ...
 
 ## dev setup
 
-This is how dev should setup to run this project on their work computers
+This is how dev should setup to run this project on their work computers 
 
 ### virtual env
 
@@ -26,6 +26,9 @@ pip install -r requirements.txt --upgrade
 
 Might need to run `Ctrl+Shift+P` in VSCode, type `Python: Create environment...` and follow instructions if needed.
 
+### running the app
+
+Run with `python function/__init__.py`.
 
 ## documentation
 
