@@ -90,13 +90,18 @@ def _split_pages(ids) -> dict:
         f = open(''.join(["preload/", str(id[1]), "/", str(id[0]), ".json"]))
         data = json.load(f)
         for d in data:
+            # TODO: remove useless tags like date modified and login blocks (see example in 336 parsed data vs non parsed)
             soup = BeautifulSoup(d["body"], "html.parser")
+            for s in soup.select('div.comment-login-message'):
+                s.decompose()
+            for s in soup.select('section.block-date-modified-block'):
+                s.decompose()
             metadata = {
                 "title": d["title"],
                 "url": d["url"],
                 "date": d["date"] # TODO: date seems to be inconcistent field.
             }
-            filepath = "data/{}/{}.json".format(d["langcode"], d["nid"])
+            filepath = "data/{}/{}".format(d["langcode"], d["nid"])
             pages[filepath] = metadata
             with open(filepath, 'w') as f:
                 f.write(' '.join(soup.stripped_strings))
