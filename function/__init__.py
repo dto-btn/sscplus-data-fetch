@@ -27,23 +27,19 @@ load_dotenv()
 logging.basicConfig(level=logging.DEBUG)
 logging.getLogger("msal").setLevel(logging.WARN)
 
-key_vault_name          = os.environ["KEY_VAULT_NAME"]
+# login azure to obtain keyvault secret
+credential     = DefaultAzureCredential()
+key_vault_name = os.environ["KEY_VAULT_NAME"]
+client         = SecretClient(vault_url=f"https://{key_vault_name}.vault.azure.net", credential=credential)
+
+# bootstrap openai variables that will be needed for this exercise
 openai_endpoint_name    = os.environ["OPENAI_ENDPOINT_NAME"]
-openai_api_version      = "2023-07-01-preview"
-
-kv_uri              = f"https://{key_vault_name}.vault.azure.net"
-azure_openai_uri    = f"https://{openai_endpoint_name}.openai.azure.com"
-
-credential  = DefaultAzureCredential()
-client      = SecretClient(vault_url=kv_uri, credential=credential)
+azure_openai_key   = client.get_secret(os.getenv("OPENAI_KEY_NAME", "AzureOpenAIKey")).value
 
 openai.api_type    = os.environ["OPENAI_API_TYPE"]    = 'azure'
-openai.api_base    = os.environ["OPENAI_API_BASE"]    = azure_openai_uri
-openai.api_version = os.environ["OPENAI_API_VERSION"] = openai_api_version
-azure_openai_key   = client.get_secret(os.getenv("OPENAI_KEY_NAME", "AzureOpenAIKey")).value
-if azure_openai_key is not None:
-    openai.api_key = os.environ["OPENAI_API_KEY"] = azure_openai_key
-
+openai.api_base    = os.environ["OPENAI_API_BASE"]    = f"https://{openai_endpoint_name}.openai.azure.com"
+openai.api_version = os.environ["OPENAI_API_VERSION"] = "2023-07-01-preview"
+openai.api_key     = os.environ["OPENAI_API_KEY"]     = azure_openai_key # type: ignore
 
 pages = {}
 
@@ -85,21 +81,22 @@ def _split_pages(ids) -> dict:
     Path("data/en").mkdir(parents=True, exist_ok=True)
     Path("data/fr").mkdir(parents=True, exist_ok=True)
 
+    ignore_selectors = ['div.comment-login-message', 'section.block-date-modified-block']
+
     for id in ids:
         print("Splitting https://plus-test.ssc-spc.gc.ca/en/rest/page-by-id/" + str(id[0]) + " type ==> " + id[1])
         f = open(''.join(["preload/", str(id[1]), "/", str(id[0]), ".json"]))
         data = json.load(f)
         for d in data:
-            # TODO: remove useless tags like date modified and login blocks (see example in 336 parsed data vs non parsed)
             soup = BeautifulSoup(d["body"], "html.parser")
-            for s in soup.select('div.comment-login-message'):
-                s.decompose()
-            for s in soup.select('section.block-date-modified-block'):
-                s.decompose()
+            # remove useless tags like date modified and login blocks (see example in 336 parsed data vs non parsed)
+            for selector in ignore_selectors:
+                for s in soup.select(selector):
+                    s.decompose()
             metadata = {
                 "title": d["title"],
                 "url": d["url"],
-                "date": d["date"] # TODO: date seems to be inconcistent field.
+                "date": d["date"] # TODO: date seems to be inconcistent field, might need some parsing, verify with Peter
             }
             filepath = "data/{}/{}".format(d["langcode"], d["nid"])
             pages[filepath] = metadata
