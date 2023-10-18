@@ -4,12 +4,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from azure.core.pipeline import Pipeline
-from azure.core.pipeline.policies import (BearerTokenCredentialPolicy,
-                                          HttpLoggingPolicy, RedirectPolicy)
-from azure.core.pipeline.transport import (HttpRequest, HttpResponse,
-                                           RequestsTransport)
-from azure.identity import DefaultAzureCredential, InteractiveBrowserCredential
+from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
@@ -19,7 +14,6 @@ from llama_index import (LangchainEmbedding, LLMPredictor, ServiceContext,
                          SimpleDirectoryReader, VectorStoreIndex,
                          set_global_service_context)
 from llama_index.callbacks import CallbackManager, LlamaDebugHandler
-from msal import ConfidentialClientApplication, PublicClientApplication
 import openai
 
 load_dotenv()
@@ -45,7 +39,7 @@ pages = {}
 
 def _get_all_ids():
     """
-    todo: get all ids from the https://plus-test.ssc-spc.gc.ca/en/rest/all-ids call
+    get all ids from the https://plus-test.ssc-spc.gc.ca/en/rest/all-ids call
     
     refine process so we can be more selective about the ids we retreive... 
     produce a list that we will be looking at, specifically re-indexing a specific portion.
@@ -56,10 +50,17 @@ def _get_all_ids():
       o	same
       o	updated within last 30 days
     """
+
+    ids = []
+
     print("Getting all ids that need to be processed...")
-    
-    # for test purposes right now the file is stored in data/ids-2023-10-17.json
-    # todo: load file ... and content into an array..
+    # TODO: do an actual call here..
+    f = open("preload/ids-2023-10-17.json")
+    data = json.load(f)
+    for d in data:
+        ids.append((d["nid"], d["type"]))
+
+    #return ids
     return [(336, "article"), (534, "gigabit"), (703, "structured_page")]
 
 def _download_pages(ids):
