@@ -57,3 +57,34 @@ resource "azurerm_app_service_virtual_network_swift_connection" "main" {
   app_service_id = azurerm_linux_function_app.main.id
   subnet_id      = azurerm_subnet.app.id
 }
+
+/****************************************************
+*                    Test VM                        *
+*****************************************************/
+resource "azurerm_linux_virtual_machine" "main" {
+  name                = "test-flow-vm"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  size                = "Standard_F2"
+  admin_username      = "adminuser"
+  network_interface_ids = [
+    azurerm_network_interface.vm.id,
+  ]
+
+  admin_ssh_key {
+    username   = "adminuser"
+    public_key = file("~/.ssh/id_rsa.pub")
+  }
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-focal"
+    sku       = "20_04-lts"
+    version   = "latest"
+  }
+}

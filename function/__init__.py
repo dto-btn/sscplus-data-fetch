@@ -16,10 +16,17 @@ from llama_index import (LangchainEmbedding, LLMPredictor, ServiceContext,
 from llama_index.callbacks import CallbackManager, LlamaDebugHandler
 import openai
 
+from azure.core.pipeline.policies import BearerTokenCredentialPolicy  
+from azure.core.pipeline import Pipeline  
+from azure.core.pipeline.transport import HttpRequest, RequestsTransport  
+from azure.core.pipeline.policies import UserAgentPolicy, NetworkTraceLoggingPolicy, HttpLoggingPolicy
+import requests  
+import msal
+
 load_dotenv()
 
-logging.basicConfig(level=logging.DEBUG)
-logging.getLogger("msal").setLevel(logging.WARN)
+#logging.basicConfig(level=logging.DEBUG)
+#logging.getLogger("msal").setLevel(logging.WARN)
 
 # login azure to obtain keyvault secret
 credential     = DefaultAzureCredential()
@@ -66,13 +73,15 @@ def _get_all_ids():
 def _download_pages(ids):
     """
     Will query the https://plus-test.ssc-spc.gc.ca/en/rest/page-by-id/336 API
-    and get a json response of the page that has both en and fr in it.
+    we make two separate calls, 1 for en and 1 for fr content.
     """
     for id in ids:
         print("Loading in https://plus-test.ssc-spc.gc.ca/en/rest/page-by-id/" + str(id[0]) + " type ==> " + id[1])
-        # save page in preload/<type>/<id>.json
+        # save page in preload/<type>/en/<id>.json
+        print("Loading in https://plus-test.ssc-spc.gc.ca/fr/rest/page-by-id/" + str(id[0]) + " type ==> " + id[1])
+        # save page in preload/<type>/fr/<id>.json
 
-def _split_pages(ids) -> dict:
+def _parse_pages(ids) -> dict:
     """
     for the purpose of this exercise there is so few pages that we can load all of them into memory
     we also have to split them into two separate page, each id gives us english and french and for 
@@ -85,24 +94,24 @@ def _split_pages(ids) -> dict:
     ignore_selectors = ['div.comment-login-message', 'section.block-date-modified-block']
 
     for id in ids:
-        print("Splitting https://plus-test.ssc-spc.gc.ca/en/rest/page-by-id/" + str(id[0]) + " type ==> " + id[1])
-        f = open(''.join(["preload/", str(id[1]), "/", str(id[0]), ".json"]))
-        data = json.load(f)
-        for d in data:
-            soup = BeautifulSoup(d["body"], "html.parser")
-            # remove useless tags like date modified and login blocks (see example in 336 parsed data vs non parsed)
-            for selector in ignore_selectors:
-                for s in soup.select(selector):
-                    s.decompose()
-            metadata = {
-                "title": d["title"],
-                "url": d["url"],
-                "date": d["date"] # TODO: date seems to be inconcistent field, might need some parsing, verify with Peter
-            }
-            filepath = "data/{}/{}".format(d["langcode"], d["nid"])
-            pages[filepath] = metadata
-            with open(filepath, 'w') as f:
-                f.write(' '.join(soup.stripped_strings))
+        for lang in ["en", "fr"]:
+            f = open(''.join(["preload/", str(id[1]), "/", lang, "/", str(id[0]), ".json"]))
+            data = json.load(f)
+            for d in data:
+                soup = BeautifulSoup(d["body"], "html.parser")
+                # remove useless tags like date modified and login blocks (see example in 336 parsed data vs non parsed)
+                for selector in ignore_selectors:
+                    for s in soup.select(selector):
+                        s.decompose()
+                metadata = {
+                    "title": str(d["title"]).strip(),
+                    "url": str(d["url"]).strip(),
+                    "date": str(d["date"]).strip() # TODO: date seems to be inconcistent field, might need some parsing, verify with Peter
+                }
+                filepath = "data/{}/{}".format(lang, d["nid"])
+                pages[filepath] = metadata
+                with open(filepath, 'w') as f:
+                    f.write(' '.join(soup.stripped_strings))
     return pages
 
 def _build_index():
@@ -167,7 +176,81 @@ here be dragons
 ids = _get_all_ids()
 # for each of the ids load the json content for them and then split the content into appropriate folder (en/fr)
 _download_pages(ids)
-pages = _split_pages(ids)
+pages = _parse_pages(ids)
 
 # at this point the "data" folder is ready to be read and indexed.
 _build_index()
+
+
+# Define the scope  
+# scope = "https://management.azure.com/.default"  
+  
+# # Define the request  
+# request = HttpRequest("GET", "https://plus-test.ssc-spc.gc.ca/en/rest/page-by-id/703")  
+  
+# # Define the pipeline  
+# pipeline = Pipeline(transport=RequestsTransport(connection_verify=False),  
+#                     policies=[UserAgentPolicy(),  
+#                               NetworkTraceLoggingPolicy(),  
+#                               HttpLoggingPolicy(),  
+#                               BearerTokenCredentialPolicy(credential, scope)])  
+  
+# # Send the request  
+# response = pipeline.run(request)  
+  
+# # Print the response  
+# print(response.http_response.text())  
+
+# if response.http_response.status_code == 302:  
+#     redirect_url = response.http_response.headers['Location']
+#     print("REDIRECT LOC IS {}".format(redirect_url))
+#     request = HttpRequest("GET", "https://plus-test.ssc-spc.gc.ca/" + redirect_url)  
+#     response = pipeline.run(request)  
+#     print(response.http_response.text()) 
+
+# config = {
+#     "authority": "https://login.microsoftonline.com/d05bc194-94bf-4ad6-ae2e-1db0f2e38f5e",
+#     "client_id": os.getenv("CLIENT_ID"),
+#     "username": os.getenv("USERNAME"),
+#     "password": os.getenv("PASSWORD"),
+#     "scope": ["User.Read"],    
+#     "endpoint": "https://plus-test.ssc-spc.gc.ca/en/rest/page-by-id/336"
+# }
+
+# # Create a preferably long-lived app instance which maintains a token cache.
+# app = msal.PublicClientApplication(
+#     config["client_id"], authority=config["authority"],
+#     # token_cache=...  # Default cache is in memory only.
+#                        # You can learn how to use SerializableTokenCache from
+#                        # https://msal-python.rtfd.io/en/latest/#msal.SerializableTokenCache
+#     )
+
+# # The pattern to acquire a token looks like this.
+# result = None
+
+# # Firstly, check the cache to see if this end user has signed in before
+# accounts = app.get_accounts(username=config["username"])
+# if accounts:
+#     logging.info("Account(s) exists in cache, probably with token too. Let's try.")
+#     result = app.acquire_token_silent(config["scope"], account=accounts[0])
+
+# if not result:
+#     logging.info("No suitable token exists in cache. Let's get a new one from AAD.")
+#     # See this page for constraints of Username Password Flow.
+#     # https://github.com/AzureAD/microsoft-authentication-library-for-python/wiki/Username-Password-Authentication
+#     result = app.acquire_token_by_username_password(
+#         config["username"], config["password"], scopes=config["scope"])
+
+# if "access_token" in result:
+#     # Calling graph using the access token
+#     graph_data = requests.get(  # Use token to call downstream service
+#         config["endpoint"],
+#         headers={'Authorization': 'Bearer ' + result['access_token']},).json()
+#     print("Graph API call result: %s" % json.dumps(graph_data, indent=2))
+# else:
+#     print(result.get("error"))
+#     print(result.get("error_description"))
+#     print(result.get("correlation_id"))  # You may need this when reporting a bug
+#     if 65001 in result.get("error_codes", []):  # Not mean to be coded programatically, but...
+#         # AAD requires user consent for U/P flow
+#         print("Visit this to consent:", app.get_authorization_request_url(config["scope"]))
