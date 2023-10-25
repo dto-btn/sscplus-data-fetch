@@ -161,3 +161,10 @@ cython_debug/
 data/
 preload/
 storage/
+.python_packages
+
+# Azure Functions artifacts
+bin
+obj
+appsettings.json
+local.settings.json

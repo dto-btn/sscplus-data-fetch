@@ -28,7 +28,11 @@ Might need to run `Ctrl+Shift+P` in VSCode, type `Python: Create environment...`
 
 ### running the app
 
-Run with `python function/__init__.py`.
+Make sure you install the Azure plugins ([install the Azure Functions extension for Visual Studio Code](https://go.microsoft.com/fwlink/?linkid=2016800))
+
+Then press `F5`.
+
+Run with `python function/__init__.py` (old).
 
 ## documentation
 
