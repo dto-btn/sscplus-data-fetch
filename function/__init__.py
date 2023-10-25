@@ -181,7 +181,6 @@ pages = _parse_pages(ids)
 # at this point the "data" folder is ready to be read and indexed.
 _build_index()
 
-
 # Define the scope  
 # scope = "https://management.azure.com/.default"  
   
