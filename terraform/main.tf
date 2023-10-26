@@ -73,6 +73,6 @@ resource "azurerm_linux_function_app" "main" {
     "XDG_CACHE_HOME"                 = "/tmp/.cache"
   }
 
-  # just run zip package.zip function_app.py requirements.txt
+  # just run zip package.zip function_app.py requirements.txt host.json
   zip_deploy_file = "/home/turcotg2/git/sscplus-data-fetch/package.zip"
 }
