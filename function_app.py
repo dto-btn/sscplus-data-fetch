@@ -7,16 +7,16 @@ import json#bourne
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
 # make this configurable via a env variable ..
-domain = "https://plus-test.ssc-spc.gc.ca/"
+domain = "https://plus-test.ssc-spc.gc.ca"
 
 @app.route(route="http_trigger")
 def http_trigger(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
 
     # TODO: remove this later this is just a quick sanity check
-    response = requests.get("https://google.com")
+    response = requests.get("https://ipinfo.io/ip")
     if response.status_code == 200:
-        logging.info("Able to reach google.com..")
+        logging.info(f"Able to reach ipinfo.io.. (external ip is {response.text})")
 
     ids = _get_all_ids()
 
@@ -45,11 +45,16 @@ def _get_all_ids():
     ids = []
     date = datetime.now().strftime("%Y-%m-%d")
 
-    response = requests.get(domain + "/en/rest/all-ids")
-    json_data = response.json()  
-    # save the data to a file  
-    with open('preload/ids-{}.json'.format(date), 'w') as f:  
-        json.dump(json_data, f) 
+    response = requests.get(domain + "/en/rest/all-ids", verify=False)
+    try:
+        json_data = response.json()
+    except:
+        logging.error("Unable to parse response to json")
+        return []
+
+    # save the data to a file
+    with open('preload/ids-{}.json'.format(date), 'w') as f:
+        json.dump(json_data, f)
 
     logging.info("Getting all ids that need to be processed...")
     # TODO: do an actual call here..
