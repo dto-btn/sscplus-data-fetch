@@ -28,3 +28,8 @@ variable "env" {
     type = string
     description = "typically the env like Sandbox, Dev or Production"
 }
+
+variable "zip_deploy_file" {
+    type = string
+    description = "the location of the package.zip that contains the file to deploy to an Azure Function App"
+}

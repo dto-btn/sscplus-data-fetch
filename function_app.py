@@ -3,8 +3,12 @@ import logging
 import requests
 from datetime import datetime
 import json#bourne
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+import os
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
+
+connection_string = str(os.getenv("StorageConnectionString"))
 
 # make this configurable via a env variable ..
 domain = "https://plus-test.ssc-spc.gc.ca"
@@ -16,9 +20,13 @@ def http_trigger(req: func.HttpRequest) -> func.HttpResponse:
     # TODO: remove this later this is just a quick sanity check
     response = requests.get("https://ipinfo.io/ip")
     if response.status_code == 200:
-        logging.info(f"Able to reach ipinfo.io.. (external ip is {response.text})")
+        logging.info(f"Able to reach ipinfo.io/ip... External ip is: {response.text}")
 
+    # loads all the ids that need to be processed
     ids = _get_all_ids()
+    # for each of the ids load the json content for them and then split the content into appropriate folder (en/fr)
+    _download_pages(ids)
+
 
     if ids:
         return func.HttpResponse(f"Successfully pulled {len(ids)} ids from the API and saved them to disk.")
@@ -45,22 +53,37 @@ def _get_all_ids():
     ids = []
     date = datetime.now().strftime("%Y-%m-%d")
 
-    response = requests.get(domain + "/en/rest/all-ids", verify=False)
     try:
-        json_data = response.json()
-    except:
-        logging.error("Unable to parse response to json")
+        r = _get_and_save(domain + "/en/rest/all-ids", "ids-{}.json".format(date))
+    except Exception as e:
+        logging.error("Unable to send request and/or parse json. Error:" + str(e))
         return []
 
-    # save the data to a file
-    with open('preload/ids-{}.json'.format(date), 'w') as f:
-        json.dump(json_data, f)
-
     logging.info("Getting all ids that need to be processed...")
-    # TODO: do an actual call here..
-    f = open("preload/ids-{}.json".format(date))
-    data = json.load(f)
-    for d in data:
+    for d in r:
         ids.append((d["nid"], d["type"]))
 
     return ids
+
+def _download_pages(ids):
+    """
+    Will query the https://plus-test.ssc-spc.gc.ca/en/rest/page-by-id/336 API
+    we make two separate calls, 1 for en and 1 for fr content.
+    """
+    try:
+        for id in ids:
+            logging.debug(f"Processing file id {id}")
+            # save page in preload/<type>/en/<id>.json
+            _get_and_save(domain + "/en/rest/page-by-id/" + str(id[0]), f"preload/{id[1]}/en/{str(id[0])}.json")
+            # save page in preload/<type>/fr/<id>.json
+            _get_and_save(domain + "/fr/rest/page-by-id/" + str(id[0]), f"preload/{id[1]}/fr/{str(id[0])}.json")
+    except Exception as e:
+        logging.error("Unable to download separate page file. Error:" + str(e))
+
+def _get_and_save(url, blob_name):
+    response = requests.get(url, verify=False)
+    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+    blob_client = blob_service_client.get_blob_client("sscplusdata", blob_name)
+    blob_client.upload_blob(json.dumps(response.json()).encode('utf-8'), overwrite=True)
+
+    return response.json()

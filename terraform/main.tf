@@ -30,6 +30,12 @@ resource "azurerm_storage_account" "main" {
   }
 }
 
+resource "azurerm_storage_container" "main" {
+  name                  = "sscplusdata"
+  storage_account_name  = azurerm_storage_account.main.name
+  container_access_type = "private"
+}
+
 /****************************************************
 *                  Function App                     *
 *****************************************************/
@@ -59,6 +65,7 @@ resource "azurerm_linux_function_app" "main" {
 
   site_config {
     always_on = false
+    vnet_route_all_enabled = true
     application_stack {
       python_version = "3.11"
     }
@@ -71,8 +78,12 @@ resource "azurerm_linux_function_app" "main" {
     "ENABLE_ORYX_BUILD"              = "true"
     "SCM_DO_BUILD_DURING_DEPLOYMENT" = "1"
     "XDG_CACHE_HOME"                 = "/tmp/.cache"
+    "StorageConnectionString"        = azurerm_storage_account.main.primary_connection_string
   }
 
+  virtual_network_subnet_id = data.azurerm_subnet.subscription-vnet-sub.id
+
   # just run zip package.zip function_app.py requirements.txt host.json
-  zip_deploy_file = "/home/turcotg2/git/sscplus-data-fetch/package.zip"
+  zip_deploy_file = var.zip_deploy_file
+
 }

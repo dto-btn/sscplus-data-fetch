@@ -6,6 +6,7 @@ azure-functions
 azure-identity
 azure-core
 azure-keyvault-secrets
+azure-storage-blob
 python-dotenv
 msal
 llama-index
