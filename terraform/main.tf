@@ -33,6 +33,13 @@ resource "azurerm_storage_account" "main" {
 /****************************************************
 *                  Function App                     *
 *****************************************************/
+resource "azurerm_application_insights" "main" {
+  name                = "sscplus-data-fetch-app-insights"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  application_type    = "web"
+}
+
 resource "azurerm_service_plan" "main" {
   name                = "${replace(var.name_prefix, "_", "")}${var.project_name}-plan"
   resource_group_name = azurerm_resource_group.main.name
@@ -50,5 +57,22 @@ resource "azurerm_linux_function_app" "main" {
   storage_account_access_key = azurerm_storage_account.main.primary_access_key
   service_plan_id            = azurerm_service_plan.main.id
 
-  site_config {}
+  site_config {
+    always_on = false
+    application_stack {
+      python_version = "3.11"
+    }
+  }
+
+  app_settings = {
+    "AzureWebJobsFeatureFlags"       = "EnableWorkerIndexing"
+    "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.main.instrumentation_key
+    "BUILD_FLAGS"                    = "UseExpressBuild"
+    "ENABLE_ORYX_BUILD"              = "true"
+    "SCM_DO_BUILD_DURING_DEPLOYMENT" = "1"
+    "XDG_CACHE_HOME"                 = "/tmp/.cache"
+  }
+
+  # just run zip package.zip function_app.py requirements.txt
+  zip_deploy_file = "/home/turcotg2/git/sscplus-data-fetch/package.zip"
 }

@@ -34,6 +34,20 @@ Then press `F5`.
 
 Run with `python function/__init__.py` (old).
 
+### troubleshooting
+
+I had an issue where the trigger wasn't detected in the V2 model. I had to modify my `local.settings.json` to include this property ([see documentation about it](https://learn.microsoft.com/en-us/azure/azure-functions/create-first-function-vs-code-python?pivots=python-mode-decorators#update-app-settings)): 
+
+```json
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
+    ...
+  }
+}
+```
+
 ## documentation
 
 * [function app in VSCode](https://learn.microsoft.com/en-ca/azure/azure-functions/functions-develop-vs-code?tabs=node-v3%2Cpython-v2%2Cisolated-process&pivots=programming-language-python)
