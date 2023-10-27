@@ -6,7 +6,6 @@ from datetime import datetime
 import json#bourne
 from azure.storage.blob import BlobServiceClient
 import os
-from dataclasses import dataclass
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 
@@ -17,13 +16,6 @@ blob_service_client = BlobServiceClient.from_connection_string(connection_string
 
 # make this configurable via a env variable ..
 domain = "https://plus-test.ssc-spc.gc.ca"
-
-@dataclass
-class Page:
-    id: str
-    type: str
-    url: str
-    blob_name: str
 
 @app.route(route="orchestrator")
 @app.durable_client_input(client_name="client")
@@ -57,11 +49,12 @@ def fetch_sscplus_data(context: df.DurableOrchestrationContext):
             download_pages_tasks.append(context.call_activity("download_page", page))
     # once we loop over the pages that do not exists in the storage, we task the function to download them.
     list_of_download = yield context.task_all(download_pages_tasks)
+
     return f"Finished downloading (or trying to ..): {len(download_pages_tasks)} page(s)"
 
 # Activity
 @app.activity_trigger(input_name="dates")
-def get_all_ids(dates: tuple) -> list[Page]:
+def get_all_ids(dates: tuple) -> list[dict]:
     """
     get all ids from the https://plus-test.ssc-spc.gc.ca/en/rest/all-ids call
 
@@ -82,8 +75,8 @@ def get_all_ids(dates: tuple) -> list[Page]:
         logging.info("Getting all ids that need to be processed...")
         for d in r:
             # add both pages here, en/fr versions
-            pages.append(Page(id=d["nid"], type=d["type"], url=f"{domain}/en/rest/page-by-id/{d['nid']}", blob_name=f"preload/{dates[0]}/{type}/en/{d['nid']}.json"))
-            pages.append(Page(id=d["nid"], type=d["type"], url=f"{domain}/fr/rest/page-by-id/{d['nid']}", blob_name=f"preload/{dates[0]}/{type}/fr/{d['nid']}.json"))
+            pages.append({"id": d["nid"], "type": d["type"], "url": f"{domain}/en/rest/page-by-id/{d['nid']}", "blob_nam": f"preload/{dates[0]}/{type}/en/{d['nid']}.json"})
+            pages.append({"id": d["nid"], "type": d["type"], "url": f"{domain}/fr/rest/page-by-id/{d['nid']}", "blob_nam": f"preload/{dates[0]}/{type}/fr/{d['nid']}.json"})
     except Exception as e:
         logging.error("Unable to send request and/or parse json. Error:" + str(e))
         return []
@@ -92,14 +85,14 @@ def get_all_ids(dates: tuple) -> list[Page]:
 
 # Activity
 @app.activity_trigger(input_name="page")
-def download_page(page: Page):
+def download_page(page: dict):
     """
     Will query the https://plus-test.ssc-spc.gc.ca/en/rest/page-by-id/336 API
     we make two separate calls, 1 for en and 1 for fr content.
     """
     try:
-        logging.debug(f"Processing file id {page.id}")
-        _get_and_save(page.url, page.blob_name)
+        logging.debug(f"Processing file id {page['id']}")
+        _get_and_save(page['url'], page['blob_name'])
         return True
     except Exception as e:
         logging.error("Unable to download separate page file. Error:" + str(e))
