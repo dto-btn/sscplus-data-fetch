@@ -96,7 +96,7 @@ def download_page(page):
 
     return paths
 
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(1)) 
+@retry(stop=stop_after_attempt(5), wait=wait_fixed(3))
 def _get_and_save(url, blob_name):
     response = requests.get(url, verify=False)
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
