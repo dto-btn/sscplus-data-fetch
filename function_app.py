@@ -4,17 +4,26 @@ import logging
 import requests
 from datetime import datetime
 import json#bourne
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+from azure.storage.blob import BlobServiceClient
 import os
+from dataclasses import dataclass
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 app = df.DFApp(http_auth_level=func.AuthLevel.FUNCTION)
 
 connection_string = str(os.getenv("StorageConnectionString"))
+blob_service_client = BlobServiceClient.from_connection_string(connection_string)
 
 # make this configurable via a env variable ..
 domain = "https://plus-test.ssc-spc.gc.ca"
+
+@dataclass
+class Page:
+    id: str
+    type: str
+    url: str
+    blob_name: str
 
 @app.route(route="orchestrator")
 @app.durable_client_input(client_name="client")
@@ -28,25 +37,31 @@ async def http_trigger(req: func.HttpRequest, client) -> func.HttpResponse:
 
     instance_id = await client.start_new("fetch_sscplus_data")
     response = client.create_check_status_response(req, instance_id)
+
     return response
 
 # Orchestrator
 @app.orchestration_trigger(context_name="context") #without a param the task is not properly registered..
 def fetch_sscplus_data(context: df.DurableOrchestrationContext):
-    cutoffdate = datetime.now().strftime("%Y-%m-%d")
-    ids = yield context.call_activity("get_all_ids", cutoffdate)
-    download_pages_tasks = [ context.call_activity("download_page", page) for page in ids ]
-    list_of_paths = yield context.task_all(download_pages_tasks)
-    if not download_pages_tasks:
-        logging.error("download_pages_tasks is empty or None")
-        return
-    # Flatten the list of paths
-    paths = [path for sublist in list_of_paths for path in sublist]
-    return paths
+
+    #This will change in the future but the delta grab of ids is not yet implemented
+    present_date = cutoffdate = datetime.now().strftime("%Y-%m-%d")
+    pages = yield context.call_activity("get_all_ids", (present_date, cutoffdate))
+    logging.info(f"There are {len(pages)} page(s) to process.")
+
+    # compare ids against what has been downloaded so far. make a list of missing ids.
+    download_pages_tasks = []
+    for page in pages:
+        blob_client = blob_service_client.get_blob_client("sscplusdata", page.blob_name)
+        if not blob_client.exists():
+            download_pages_tasks.append(context.call_activity("download_page", page))
+    # once we loop over the pages that do not exists in the storage, we task the function to download them.
+    list_of_download = yield context.task_all(download_pages_tasks)
+    return f"Finished downloading (or trying to ..): {len(download_pages_tasks)} page(s)"
 
 # Activity
-@app.activity_trigger(input_name="cutoffdate")
-def get_all_ids(cutoffdate: str) -> list[tuple[str, str]]:
+@app.activity_trigger(input_name="dates")
+def get_all_ids(dates: tuple) -> list[Page]:
     """
     get all ids from the https://plus-test.ssc-spc.gc.ca/en/rest/all-ids call
 
@@ -59,47 +74,42 @@ def get_all_ids(cutoffdate: str) -> list[tuple[str, str]]:
       o	same
       o	updated within last 30 days
     """
-    logging.info(f'cutoff date is {cutoffdate}')
-    ids = []
-    date = datetime.now().strftime("%Y-%m-%d")
+    logging.info(f'Getting all page IDs. Cutoff date is {dates[1]}')
+    pages = []
 
     try:
-        r = _get_and_save(f"{domain}/en/rest/all-ids", f"ids-{date}.json")
+        r = _get_and_save(f"{domain}/en/rest/all-ids", f"ids-{dates[0]}.json")
         logging.info("Getting all ids that need to be processed...")
         for d in r:
-            ids.append((d["nid"], d["type"]))
+            # add both pages here, en/fr versions
+            pages.append(Page(id=d["nid"], type=d["type"], url=f"{domain}/en/rest/page-by-id/{d['nid']}", blob_name=f"preload/{dates[0]}/{type}/en/{d['nid']}.json"))
+            pages.append(Page(id=d["nid"], type=d["type"], url=f"{domain}/fr/rest/page-by-id/{d['nid']}", blob_name=f"preload/{dates[0]}/{type}/fr/{d['nid']}.json"))
     except Exception as e:
         logging.error("Unable to send request and/or parse json. Error:" + str(e))
         return []
 
-    return ids
+    return pages
 
 # Activity
 @app.activity_trigger(input_name="page")
-def download_page(page):
+def download_page(page: Page):
     """
     Will query the https://plus-test.ssc-spc.gc.ca/en/rest/page-by-id/336 API
     we make two separate calls, 1 for en and 1 for fr content.
     """
-    paths = []
     try:
-        nid = page[0]
-        type = page[1]
-        date = datetime.now().strftime("%Y-%m-%d")
-        logging.debug(f"Processing file id {nid}")
-        _get_and_save(f"{domain}/en/rest/page-by-id/{nid}", f"preload/{date}/{type}/en/{nid}.json")
-        _get_and_save(f"{domain}/fr/rest/page-by-id/{nid}", f"preload/{date}/{type}/fr/{nid}.json")
-        paths.append(f"preload/{date}/{type}/en/{nid}.json")
-        paths.append(f"preload/{date}/{type}/fr/{nid}.json")
+        logging.debug(f"Processing file id {page.id}")
+        _get_and_save(page.url, page.blob_name)
+        return True
     except Exception as e:
         logging.error("Unable to download separate page file. Error:" + str(e))
+        return False
 
-    return paths
-
-@retry(stop=stop_after_attempt(5), wait=wait_fixed(3))
+# getting loads of connection terminated by fw or lb over their aks instances
+# this helps greatly, but still need a net to catch missing ids.
+@retry(stop=stop_after_attempt(5), wait=wait_fixed(3)) 
 def _get_and_save(url, blob_name):
     response = requests.get(url, verify=False)
-    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
     blob_client = blob_service_client.get_blob_client("sscplusdata", blob_name)
     blob_client.upload_blob(json.dumps(response.json()).encode('utf-8'), overwrite=True)
 
