@@ -44,7 +44,7 @@ def fetch_sscplus_data(context: df.DurableOrchestrationContext):
     # compare ids against what has been downloaded so far. make a list of missing ids.
     download_pages_tasks = []
     for page in pages:
-        blob_client = blob_service_client.get_blob_client("sscplusdata", page.blob_name)
+        blob_client = blob_service_client.get_blob_client("sscplusdata", page['blob_name'])
         if not blob_client.exists():
             download_pages_tasks.append(context.call_activity("download_page", page))
     # once we loop over the pages that do not exists in the storage, we task the function to download them.
@@ -75,8 +75,8 @@ def get_all_ids(dates: tuple) -> list[dict]:
         logging.info("Getting all ids that need to be processed...")
         for d in r:
             # add both pages here, en/fr versions
-            pages.append({"id": d["nid"], "type": d["type"], "url": f"{domain}/en/rest/page-by-id/{d['nid']}", "blob_nam": f"preload/{dates[0]}/{type}/en/{d['nid']}.json"})
-            pages.append({"id": d["nid"], "type": d["type"], "url": f"{domain}/fr/rest/page-by-id/{d['nid']}", "blob_nam": f"preload/{dates[0]}/{type}/fr/{d['nid']}.json"})
+            pages.append({"id": d["nid"], "type": d["type"], "url": f"{domain}/en/rest/page-by-id/{d['nid']}", "blob_name": f"preload/{dates[0]}/{type}/en/{d['nid']}.json"})
+            pages.append({"id": d["nid"], "type": d["type"], "url": f"{domain}/fr/rest/page-by-id/{d['nid']}", "blob_name": f"preload/{dates[0]}/{type}/fr/{d['nid']}.json"})
     except Exception as e:
         logging.error("Unable to send request and/or parse json. Error:" + str(e))
         return []
