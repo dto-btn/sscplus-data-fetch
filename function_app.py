@@ -1,4 +1,5 @@
 import azure.functions as func
+import azure.durable_functions as df
 import logging
 import requests
 from datetime import datetime
@@ -6,41 +7,50 @@ import json#bourne
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 import os
 
-app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
+from tenacity import retry, stop_after_attempt, wait_fixed
+
+app = df.DFApp(http_auth_level=func.AuthLevel.FUNCTION)
 
 connection_string = str(os.getenv("StorageConnectionString"))
 
 # make this configurable via a env variable ..
 domain = "https://plus-test.ssc-spc.gc.ca"
 
-@app.route(route="http_trigger")
-def http_trigger(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python HTTP trigger function processed a request.')
+@app.route(route="orchestrator")
+@app.durable_client_input(client_name="client")
+async def http_trigger(req: func.HttpRequest, client) -> func.HttpResponse:
+    logging.info('triggered!!!')
 
     # TODO: remove this later this is just a quick sanity check
     response = requests.get("https://ipinfo.io/ip")
     if response.status_code == 200:
         logging.info(f"Able to reach ipinfo.io/ip... External ip is: {response.text}")
 
-    # loads all the ids that need to be processed
-    ids = _get_all_ids()
-    # for each of the ids load the json content for them and then split the content into appropriate folder (en/fr)
-    _download_pages(ids)
+    instance_id = await client.start_new("fetch_sscplus_data")
+    response = client.create_check_status_response(req, instance_id)
+    return response
 
+# Orchestrator
+@app.orchestration_trigger(context_name="context") #without a param the task is not properly registered..
+def fetch_sscplus_data(context: df.DurableOrchestrationContext):
+    cutoffdate = datetime.now().strftime("%Y-%m-%d")
+    ids = yield context.call_activity("get_all_ids", cutoffdate)
+    download_pages_tasks = [ context.call_activity("download_page", page) for page in ids ]
+    list_of_paths = yield context.task_all(download_pages_tasks)
+    if not download_pages_tasks:
+        logging.error("download_pages_tasks is empty or None")
+        return
+    # Flatten the list of paths
+    paths = [path for sublist in list_of_paths for path in sublist]
+    return paths
 
-    if ids:
-        return func.HttpResponse(f"Successfully pulled {len(ids)} ids from the API and saved them to disk.")
-    else:
-        return func.HttpResponse(
-             "Unable to read from SSCPlus Druap API...",
-             status_code=500
-        )
-
-def _get_all_ids():
+# Activity
+@app.activity_trigger(input_name="cutoffdate")
+def get_all_ids(cutoffdate: str) -> list[tuple[str, str]]:
     """
     get all ids from the https://plus-test.ssc-spc.gc.ca/en/rest/all-ids call
 
-    refine process so we can be more selective about the ids we retreive... 
+    refine process so we can be more selective about the ids we retreive...
     produce a list that we will be looking at, specifically re-indexing a specific portion.
     •	/rest/updated-ids/week
       o	same
@@ -49,37 +59,43 @@ def _get_all_ids():
       o	same
       o	updated within last 30 days
     """
-
+    logging.info(f'cutoff date is {cutoffdate}')
     ids = []
     date = datetime.now().strftime("%Y-%m-%d")
 
     try:
-        r = _get_and_save(domain + "/en/rest/all-ids", "ids-{}.json".format(date))
+        r = _get_and_save(f"{domain}/en/rest/all-ids", f"ids-{date}.json")
+        logging.info("Getting all ids that need to be processed...")
+        for d in r:
+            ids.append((d["nid"], d["type"]))
     except Exception as e:
         logging.error("Unable to send request and/or parse json. Error:" + str(e))
         return []
 
-    logging.info("Getting all ids that need to be processed...")
-    for d in r:
-        ids.append((d["nid"], d["type"]))
-
     return ids
 
-def _download_pages(ids):
+# Activity
+@app.activity_trigger(input_name="page")
+def download_page(page):
     """
     Will query the https://plus-test.ssc-spc.gc.ca/en/rest/page-by-id/336 API
     we make two separate calls, 1 for en and 1 for fr content.
     """
+    paths = []
     try:
-        for id in ids:
-            logging.debug(f"Processing file id {id}")
-            # save page in preload/<type>/en/<id>.json
-            _get_and_save(domain + "/en/rest/page-by-id/" + str(id[0]), f"preload/{id[1]}/en/{str(id[0])}.json")
-            # save page in preload/<type>/fr/<id>.json
-            _get_and_save(domain + "/fr/rest/page-by-id/" + str(id[0]), f"preload/{id[1]}/fr/{str(id[0])}.json")
+        nid = page[0]
+        type = page[1]
+        logging.debug(f"Processing file id {nid}")
+        _get_and_save(f"{domain}/en/rest/page-by-id/{nid}", f"preload/{type}/en/{nid}.json")
+        _get_and_save(f"{domain}/fr/rest/page-by-id/{nid}", f"preload/{type}/fr/{nid}.json")
+        paths.append(f"preload/{type}/en/{nid}.json")
+        paths.append(f"preload/{type}/fr/{nid}.json")
     except Exception as e:
         logging.error("Unable to download separate page file. Error:" + str(e))
 
+    return paths
+
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(1)) 
 def _get_and_save(url, blob_name):
     response = requests.get(url, verify=False)
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)

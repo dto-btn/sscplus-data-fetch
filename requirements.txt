@@ -3,6 +3,7 @@
 # Manually managing azure-functions-worker may cause unexpected issues
 
 azure-functions
+azure-functions-durable
 azure-identity
 azure-core
 azure-keyvault-secrets
@@ -13,3 +14,4 @@ llama-index
 bs4
 openai
 langchain
+tenacity
