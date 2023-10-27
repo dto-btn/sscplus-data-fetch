@@ -85,11 +85,12 @@ def download_page(page):
     try:
         nid = page[0]
         type = page[1]
+        date = datetime.now().strftime("%Y-%m-%d")
         logging.debug(f"Processing file id {nid}")
-        _get_and_save(f"{domain}/en/rest/page-by-id/{nid}", f"preload/{type}/en/{nid}.json")
-        _get_and_save(f"{domain}/fr/rest/page-by-id/{nid}", f"preload/{type}/fr/{nid}.json")
-        paths.append(f"preload/{type}/en/{nid}.json")
-        paths.append(f"preload/{type}/fr/{nid}.json")
+        _get_and_save(f"{domain}/en/rest/page-by-id/{nid}", f"preload/{date}/{type}/en/{nid}.json")
+        _get_and_save(f"{domain}/fr/rest/page-by-id/{nid}", f"preload/{date}/{type}/fr/{nid}.json")
+        paths.append(f"preload/{date}/{type}/en/{nid}.json")
+        paths.append(f"preload/{date}/{type}/fr/{nid}.json")
     except Exception as e:
         logging.error("Unable to download separate page file. Error:" + str(e))
 
