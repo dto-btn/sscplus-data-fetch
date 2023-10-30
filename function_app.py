@@ -75,8 +75,8 @@ def get_all_ids(dates: tuple) -> list[dict]:
         logging.info("Getting all ids that need to be processed...")
         for d in r:
             # add both pages here, en/fr versions
-            pages.append({"id": d["nid"], "type": d["type"], "url": f"{domain}/en/rest/page-by-id/{d['nid']}", "blob_name": f"preload/{dates[0]}/{type}/en/{d['nid']}.json"})
-            pages.append({"id": d["nid"], "type": d["type"], "url": f"{domain}/fr/rest/page-by-id/{d['nid']}", "blob_name": f"preload/{dates[0]}/{type}/fr/{d['nid']}.json"})
+            pages.append({"id": d["nid"], "type": d["type"], "url": f"{domain}/en/rest/page-by-id/{d['nid']}", "blob_name": f"preload/{dates[0]}/{d['type']}/en/{d['nid']}.json"})
+            pages.append({"id": d["nid"], "type": d["type"], "url": f"{domain}/fr/rest/page-by-id/{d['nid']}", "blob_name": f"preload/{dates[0]}/{d['type']}/fr/{d['nid']}.json"})
     except Exception as e:
         logging.error("Unable to send request and/or parse json. Error:" + str(e))
         return []
