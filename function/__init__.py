@@ -16,11 +16,11 @@ from llama_index import (LangchainEmbedding, LLMPredictor, ServiceContext,
 from llama_index.callbacks import CallbackManager, LlamaDebugHandler
 import openai
 
-from azure.core.pipeline.policies import BearerTokenCredentialPolicy  
-from azure.core.pipeline import Pipeline  
-from azure.core.pipeline.transport import HttpRequest, RequestsTransport  
+from azure.core.pipeline.policies import BearerTokenCredentialPolicy
+from azure.core.pipeline import Pipeline
+from azure.core.pipeline.transport import HttpRequest, RequestsTransport
 from azure.core.pipeline.policies import UserAgentPolicy, NetworkTraceLoggingPolicy, HttpLoggingPolicy
-import requests  
+import requests
 import msal
 
 load_dotenv()

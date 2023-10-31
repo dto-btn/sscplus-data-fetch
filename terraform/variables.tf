@@ -6,7 +6,7 @@ variable "default_location" {
 variable "personal_token" {
     type        = string
     sensitive   = true
-    description = "used for direct github connection to repository for ci/cd"
+    description = "used for direct github connection to repository for ci/cd (bad trying to get rid of this...)"
 }
 
 variable "project_name" {
@@ -32,4 +32,17 @@ variable "env" {
 variable "zip_deploy_file" {
     type = string
     description = "the location of the package.zip that contains the file to deploy to an Azure Function App"
+}
+
+variable "keyvault_name" {
+    type = string
+    description = "keyvault name where the secrets are kept ..."
+}
+
+variable "keyvault_rg" {
+    type = string
+}
+
+variable "storage_name" {
+    type = string
 }
