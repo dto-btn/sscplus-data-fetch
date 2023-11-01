@@ -34,15 +34,10 @@ variable "zip_deploy_file" {
     description = "the location of the package.zip that contains the file to deploy to an Azure Function App"
 }
 
-variable "keyvault_name" {
-    type = string
-    description = "keyvault name where the secrets are kept ..."
-}
-
-variable "keyvault_rg" {
+variable "openai_rg" {
     type = string
 }
 
-variable "storage_name" {
+variable "openai_name" {
     type = string
 }

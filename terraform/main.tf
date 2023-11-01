@@ -42,26 +42,9 @@ resource "azurerm_storage_container" "indices" {
   container_access_type = "private"
 }
 
-data "azurerm_key_vault" "infra" {
-  name = var.keyvault_name
-  resource_group_name = var.keyvault_rg
-}
-
-/****************************************************
-*                      USERS                        *
-*****************************************************/
-
-resource "azurerm_user_assigned_identity" "app" {
-  resource_group_name = azurerm_resource_group.main.name
-  location            = var.default_location
-  name                = "function-app-identity"
-}
-
-resource "azurerm_key_vault_access_policy" "infra" {
-  key_vault_id          = data.azurerm_key_vault.infra.id
-  object_id             = azurerm_linux_function_app.main.identity.0.principal_id
-  tenant_id             = azurerm_linux_function_app.main.identity.0.tenant_id
-  secret_permissions    = ["Get", "List"]
+data "azurerm_cognitive_account" "ai" {
+  name                = var.openai_name
+  resource_group_name = var.openai_rg
 }
 
 /****************************************************
@@ -91,11 +74,6 @@ resource "azurerm_linux_function_app" "main" {
   storage_account_access_key = azurerm_storage_account.main.primary_access_key
   service_plan_id            = azurerm_service_plan.main.id
 
-  identity {
-    type = "UserAssigned"
-    identity_ids = [ azurerm_user_assigned_identity.api.id ]
-  }
-
   site_config {
     always_on = false
     vnet_route_all_enabled = true
@@ -111,8 +89,9 @@ resource "azurerm_linux_function_app" "main" {
     "ENABLE_ORYX_BUILD"              = "true"
     "SCM_DO_BUILD_DURING_DEPLOYMENT" = "1"
     "XDG_CACHE_HOME"                 = "/tmp/.cache"
-    "StorageName"                    = var.storage_name
-    "KeyVaultName"                   = var.keyvault_name
+    "StorageConnectionString"        = azurerm_storage_account.main.primary_connection_string
+    "AzureOpenAIEndpoint"            = data.azurerm_cognitive_account.ai.endpoint
+    "AzureOpenAIKey"                 = data.azurerm_cognitive_account.ai.primary_access_key
   }
 
   virtual_network_subnet_id = data.azurerm_subnet.subscription-vnet-sub.id

@@ -29,7 +29,7 @@ openai_endpoint_name    = os.getenv("AzureOpenAIEndpoint")
 azure_openai_key        = os.getenv("AzureOpenAIKey")
 
 openai.api_type    = os.environ["OPENAI_API_TYPE"]    = 'azure'
-openai.api_base    = os.environ["OPENAI_API_BASE"]    = f"https://{openai_endpoint_name}.openai.azure.com/"
+openai.api_base    = os.environ["OPENAI_API_BASE"]    = openai_endpoint_name # type: ignore
 openai.api_version = os.environ["OPENAI_API_VERSION"] = "2023-07-01-preview"
 openai.api_key     = os.environ["OPENAI_API_KEY"]     = azure_openai_key # type: ignore
 
