@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 import openai
 import requests
 from azure.storage.blob import BlobServiceClient
-from langchain.chat_models import AzureChatOpenAI
+from llama_index.llms import AzureOpenAI
 from langchain.embeddings import OpenAIEmbeddings
 from llama_index import (Document, LangchainEmbedding, LLMPredictor, ServiceContext,
                          VectorStoreIndex,
@@ -235,23 +235,24 @@ def _get_service_context(model: str, context_window: int, temperature: float = 0
     llm_predictor = _get_llm_predictor(llm)
 
     # limit is chunk size 1 atm
-    embedding_llm = LangchainEmbedding(
-        OpenAIEmbeddings(
+    embedding_llm = OpenAIEmbeddings(
             model="text-embedding-ada-002", 
             deployment="text-embedding-ada-002", 
             openai_api_key=openai.api_key,
             openai_api_base=openai.api_base,
             openai_api_type=openai.api_type,
-            openai_api_version=openai.api_version),
-            embed_batch_size=1)
-    
+            openai_api_version=openai.api_version,
+            max_retries=50,
+            chunk_size=8191,
+            embedding_ctx_length=8191)
+
     llama_debug = LlamaDebugHandler(print_trace_on_end=True)
     callback_manager = CallbackManager([llama_debug])
 
-    return ServiceContext.from_defaults(llm_predictor=llm_predictor, embed_model=embedding_llm, callback_manager=callback_manager, chunk_size=2048)
+    return ServiceContext.from_defaults(llm=llm, embed_model=embedding_llm, callback_manager=callback_manager, chunk_size=2048)
 
 def _get_llm(model: str, temperature: float = 0.7):
-    return AzureChatOpenAI(model=model, 
+    return AzureOpenAI(model=model, 
                            deployment_name=model,
                            temperature=temperature,)
 
