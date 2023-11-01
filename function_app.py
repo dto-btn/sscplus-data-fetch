@@ -5,6 +5,7 @@ from datetime import datetime
 
 import azure.durable_functions as df
 import azure.functions as func
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import openai
 import requests
@@ -44,7 +45,6 @@ async def fetch_data(req: func.HttpRequest, client) -> func.HttpResponse:
     necessary to do a data fetch from ssc plus drupal api
     and will store all the json payload in a azure blob storage
     '''
-    logging.debug('triggered!!!')
 
     # TODO: remove this later this is just a quick sanity check
     response = requests.get("https://ipinfo.io/ip")
@@ -173,16 +173,30 @@ def load_pages_as_json(date: str) -> list:
     container_client = blob_service_client.get_container_client("sscplusdata")
     blobs = container_client.list_blobs("preload/" + date + "/")
 
+    ignore_selectors = ['div.comment-login-message', 'section.block-date-modified-block']
+
     for blob in blobs:
         blob_client = container_client.get_blob_client(blob)
         # Download the blob data and decode it to string
         data = blob_client.download_blob().readall().decode('utf-8')
         if data is not None:
-            page = json.loads(data)
-            if isinstance(page, list) and page:
-                page = page[0] # sometimes the object is boxed into an array, not useful to us
-            if isinstance(page, dict):
+            raw = json.loads(data)
+            if isinstance(raw, list) and raw:
+                raw = raw[0] # sometimes the object is boxed into an array, not useful to us
+            if isinstance(raw, dict):
+                page = {}
+                soup = BeautifulSoup(raw["body"], "html.parser")
+                # remove useless tags like date modified and login blocks (see example in 336 parsed data vs non parsed)
+                for selector in ignore_selectors:
+                     for s in soup.select(selector):
+                         s.decompose()
+
+                page["body"] = ' '.join(soup.stripped_strings)
+                page["title"] = str(raw["title"]).strip()
+                page["url"] = str(raw["url"]).strip()
+                page["date"] = str(raw["date"]).strip()
                 page["filename"] = blob_client.blob_name
+
                 pages.append(page)
 
     return pages
@@ -203,7 +217,8 @@ def build_index(pages: list) -> str:
             }
         )
         documents.append(document)
-        logging.info(document.metadata['filename'])
+    
+    logging.info("Finished loading all document in memory")
 
     """
     store documents into a vector store.
