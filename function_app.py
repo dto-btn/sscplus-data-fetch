@@ -11,13 +11,15 @@ import openai
 import requests
 from azure.storage.blob import BlobServiceClient
 from llama_index.llms import AzureOpenAI
-from langchain.embeddings import OpenAIEmbeddings
-from llama_index import (Document, LangchainEmbedding, LLMPredictor, ServiceContext,
+from langchain.chat_models import AzureChatOpenAI
+from langchain.embeddings import AzureOpenAIEmbeddings
+from llama_index import (Document, LLMPredictor, PromptHelper, ServiceContext,
                          VectorStoreIndex,
                          set_global_service_context)
 from llama_index.callbacks import CallbackManager, LlamaDebugHandler
 from tenacity import retry, stop_after_attempt, wait_fixed
 import glob
+
 
 load_dotenv()
 
@@ -26,18 +28,21 @@ app = df.DFApp(http_auth_level=func.AuthLevel.FUNCTION)
 connection_string   = os.getenv("StorageConnectionString")
 blob_service_client = BlobServiceClient.from_connection_string(str(connection_string))
 
-openai_endpoint_name    = os.getenv("AzureOpenAIEndpoint")
-azure_openai_key        = os.getenv("AzureOpenAIKey")
+azure_openai_uri    = os.getenv("AzureOpenAIEndpoint")
+api_key     = os.getenv("AzureOpenAIKey")
+api_version = "2023-07-01-preview"
 
-openai.api_type    = os.environ["OPENAI_API_TYPE"]    = 'azure'
-openai.api_base    = os.environ["OPENAI_API_BASE"]    = openai_endpoint_name # type: ignore
-openai.api_version = os.environ["OPENAI_API_VERSION"] = "2023-07-01-preview"
-openai.api_key     = os.environ["OPENAI_API_KEY"]     = azure_openai_key # type: ignore
+client = AzureOpenAI(
+    engine="gpt4",
+    api_version=api_version,
+    azure_endpoint=azure_openai_uri,
+    api_key=api_key
+)
 
 # make this configurable via a env variable ..
-domain = "https://plus-test.ssc-spc.gc.ca"
+domain = "https://plus.ssc-spc.gc.ca"
 
-@app.route(route="fetchdata")
+@app.route(route="orchestrators/fetch_data")
 @app.durable_client_input(client_name="client")
 async def fetch_data(req: func.HttpRequest, client) -> func.HttpResponse:
     '''
@@ -132,7 +137,7 @@ def _get_and_save(url, blob_name):
 
     return response.json()
 
-@app.route(route="buildindex")
+@app.route(route="orchestrators/durable_build_index")
 @app.durable_client_input(client_name="client")
 async def durable_build_index(req: func.HttpRequest, client) -> func.HttpResponse:
     '''
@@ -176,7 +181,7 @@ def load_pages_as_json(date: str) -> list:
     ignore_selectors = ['div.comment-login-message', 'section.block-date-modified-block']
 
     for blob in blobs:
-        blob_client = container_client.get_blob_client(blob)
+        blob_client = container_client.get_blob_client(blob) # type: ignore
         # Download the blob data and decode it to string
         data = blob_client.download_blob().readall().decode('utf-8')
         if data is not None:
@@ -217,7 +222,7 @@ def build_index(pages: list) -> str:
             }
         )
         documents.append(document)
-    
+
     logging.info("Finished loading all document in memory")
 
     """
@@ -241,35 +246,27 @@ def build_index(pages: list) -> str:
 
     return "Storage name: /tmp/storage/" + date
 
-def _get_service_context(model: str, context_window: int, temperature: float = 0.7, num_output: int = 800) -> "ServiceContext":
-    chunk_overlap_ratio = 0.1 # overlap for each token fragment
-
+def _get_service_context(model: str, context_window: int, num_output: int = 800, temperature: float = 0.7,) -> "ServiceContext":
     # using same dep as model name because of an older bug in langchains lib (now fixed I believe)
     llm = _get_llm(model, temperature)
 
     llm_predictor = _get_llm_predictor(llm)
 
+    chunk_overlap_ratio = 0.1 # overlap for each token fragment
+    prompt_helper = PromptHelper(context_window=context_window, num_output=num_output, chunk_overlap_ratio=chunk_overlap_ratio,)
+
     # limit is chunk size 1 atm
-    embedding_llm = OpenAIEmbeddings(
-            model="text-embedding-ada-002", 
-            deployment="text-embedding-ada-002", 
-            openai_api_key=openai.api_key,
-            openai_api_base=openai.api_base,
-            openai_api_type=openai.api_type,
-            openai_api_version=openai.api_version,
-            max_retries=50,
-            chunk_size=8191,
-            embedding_ctx_length=8191)
+    embedding_llm = AzureOpenAIEmbeddings(
+            model="text-embedding-ada-002", api_key=api_key, azure_endpoint=azure_openai_uri)
 
     llama_debug = LlamaDebugHandler(print_trace_on_end=True)
     callback_manager = CallbackManager([llama_debug])
 
-    return ServiceContext.from_defaults(llm=llm, embed_model=embedding_llm, callback_manager=callback_manager, chunk_size=2048)
+    return ServiceContext.from_defaults(llm_predictor=llm_predictor, embed_model=embedding_llm, callback_manager=callback_manager, prompt_helper=prompt_helper)
 
 def _get_llm(model: str, temperature: float = 0.7):
-    return AzureOpenAI(model=model, 
-                           deployment_name=model,
-                           temperature=temperature,)
+    return AzureChatOpenAI(model=model,
+                           temperature=temperature,api_key=api_key, api_version=api_version, azure_endpoint=azure_openai_uri)
 
 def _get_llm_predictor(llm) -> LLMPredictor:
     return LLMPredictor(llm=llm,)
