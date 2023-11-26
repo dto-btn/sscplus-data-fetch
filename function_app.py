@@ -246,6 +246,22 @@ def build_index(pages: list) -> str:
 
     return "Storage name: /tmp/storage/" + date
 
+@app.function_name(name="get_page_updates")
+@app.schedule(schedule="0 0 * * 0", arg_name="timer", run_on_startup=True)
+def get_page_updates(timer: func.TimerRequest) -> None:
+    date = datetime.now().strftime("%Y-%m-%d")
+    logging.info('Python timer trigger function ran at %s', date)
+    pages = []
+
+    try:
+        r = _get_and_save(f"{domain}/en/rest/updated-ids/week", f"updated-ids-{date}.json")
+        logging.info("Getting all ids that need to be processed...")
+        for d in r:
+            _get_and_save(f"{domain}/en/rest/page-by-id/{d['nid']}", f"updated/{date}/{d['type']}/en/{d['nid']}.json")
+            _get_and_save(f"{domain}/fr/rest/page-by-id/{d['nid']}", f"updated/{date}/{d['type']}/fr/{d['nid']}.json")
+    except Exception as e:
+        logging.error("Unable to send request and/or parse json. Error:" + str(e))
+
 def _get_service_context(model: str, context_window: int, num_output: int = 800, temperature: float = 0.7,) -> "ServiceContext":
     # using same dep as model name because of an older bug in langchains lib (now fixed I believe)
     llm = _get_llm(model, temperature)
