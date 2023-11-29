@@ -217,28 +217,23 @@ def build_index(pages: list) -> str:
 
     return "Storage name: /tmp/storage/" + date
 
-# @app.function_name(name="get_page_updates")
-# @app.schedule(schedule="0 0 * * 0", arg_name="timer", run_on_startup=True)
-# def get_page_updates(timer: func.TimerRequest) -> None:
-#     date = datetime.now().strftime("%Y-%m-%d")
-#     logging.info('Python timer trigger function ran at %s', date)
-#     pages = []
+@app.function_name(name="get_page_updates")
+@app.schedule(schedule="0 0 * * 0", arg_name="timer", run_on_startup=True)
+def get_page_updates(timer: func.TimerRequest) -> None:
+    date = datetime.now().strftime("%Y-%m-%d")
+    logging.info(' [rebuild index] Timed triggered function ran at %s', date)
+    '''get updated pages since last week and store them'''
+    try:
+        r = _get_and_save(f"{domain}/en/rest/updated-ids/week", f"updated-ids-{date}.json")
+        logging.info("Getting all ids that need to be processed...")
+        for d in r:
+            _get_and_save(f"{domain}/en/rest/page-by-id/{d['nid']}", f"updated/{date}/{d['type']}/en/{d['nid']}.json")
+            _get_and_save(f"{domain}/fr/rest/page-by-id/{d['nid']}", f"updated/{date}/{d['type']}/fr/{d['nid']}.json")
+    except Exception as e:
+        logging.error("Unable to send request and/or parse json. Error:" + str(e))
 
-#     try:
-#         r = _get_and_save(f"{domain}/en/rest/updated-ids/week", f"updated-ids-{date}.json")
-#         logging.info("Getting all ids that need to be processed...")
-#         for d in r:
-#             _get_and_save(f"{domain}/en/rest/page-by-id/{d['nid']}", f"updated/{date}/{d['type']}/en/{d['nid']}.json")
-#             _get_and_save(f"{domain}/fr/rest/page-by-id/{d['nid']}", f"updated/{date}/{d['type']}/fr/{d['nid']}.json")
-#     except Exception as e:
-#         logging.error("Unable to send request and/or parse json. Error:" + str(e))
-
-@app.function_name(name="rebuild_index")
-@app.route(route="rebuild")
-def rebuild_index(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info("Triggered index rebuild ... fetching most recent index.")
     container_client = blob_service_client.get_container_client("indices")
-     # Ensure the tmp directory exists  
+    # Ensure the tmp directory exists  
     os.makedirs('/tmp/latest', exist_ok=True)  
   
     '''load index locally'''
@@ -258,11 +253,9 @@ def rebuild_index(req: func.HttpRequest) -> func.HttpResponse:
         with open(download_file_path, "wb") as download_file:  
             download_file.write(blob_client.download_blob().readall())  
 
-    #TODO: reuse the all the files 
-    # Temp loading files directly to test...
-    pages = _get_pages_as_json("updated", "2023-11-26")
+    #TODO: reuse the all the files from above instead of re-loading them this way, inefficient.. might be useless to store them in the first place...
+    pages = _get_pages_as_json("updated", date)
     nids_set = {str(page['nid']) for page in pages}
-
 
     '''load index in memory'''
     start = time.time()
@@ -306,8 +299,7 @@ def rebuild_index(req: func.HttpRequest) -> func.HttpResponse:
         blob_client = container_client.get_blob_client("latest/" + blob_name)
         with open(file, "rb") as data:
             blob_client.upload_blob(data, overwrite=True)
-
-    return func.HttpResponse("Index rebuild triggered and files downloaded.", status_code=200) 
+    logging.info("done updating the index and re-uploading to storage")
 
 def _get_service_context(model: str, context_window: int, num_output: int = 800, temperature: float = 0.7,) -> "ServiceContext":
     # using same dep as model name because of an older bug in langchains lib (now fixed I believe)
