@@ -2,6 +2,8 @@ import json  # bourne
 import logging
 import os
 from datetime import datetime
+import time
+import re
 
 import azure.durable_functions as df
 import azure.functions as func
@@ -13,8 +15,8 @@ from azure.storage.blob import BlobServiceClient
 from llama_index.llms import AzureOpenAI
 from langchain.chat_models import AzureChatOpenAI
 from langchain.embeddings import AzureOpenAIEmbeddings
-from llama_index import (Document, LLMPredictor, PromptHelper, ServiceContext,
-                         VectorStoreIndex,
+from llama_index import (Document, LLMPredictor, PromptHelper, ServiceContext, StorageContext,
+                         VectorStoreIndex, load_index_from_storage,
                          set_global_service_context)
 from llama_index.callbacks import CallbackManager, LlamaDebugHandler
 from tenacity import retry, stop_after_attempt, wait_fixed
@@ -171,40 +173,8 @@ def build_index_orc(context: df.DurableOrchestrationContext):
 
 @app.activity_trigger(input_name="date")
 def load_pages_as_json(date: str) -> list:
-    pages = []
-
     logging.info("getting pages ...")
-
-    container_client = blob_service_client.get_container_client("sscplusdata")
-    blobs = container_client.list_blobs("preload/" + date + "/")
-
-    ignore_selectors = ['div.comment-login-message', 'section.block-date-modified-block']
-
-    for blob in blobs:
-        blob_client = container_client.get_blob_client(blob) # type: ignore
-        # Download the blob data and decode it to string
-        data = blob_client.download_blob().readall().decode('utf-8')
-        if data is not None:
-            raw = json.loads(data)
-            if isinstance(raw, list) and raw:
-                raw = raw[0] # sometimes the object is boxed into an array, not useful to us
-            if isinstance(raw, dict):
-                page = {}
-                soup = BeautifulSoup(raw["body"], "html.parser")
-                # remove useless tags like date modified and login blocks (see example in 336 parsed data vs non parsed)
-                for selector in ignore_selectors:
-                     for s in soup.select(selector):
-                         s.decompose()
-
-                page["body"] = ' '.join(soup.stripped_strings)
-                page["title"] = str(raw["title"]).strip()
-                page["url"] = str(raw["url"]).strip()
-                page["date"] = str(raw["date"]).strip()
-                page["filename"] = blob_client.blob_name
-
-                pages.append(page)
-
-    return pages
+    return _get_pages_as_json("preload", date)
 
 @app.activity_trigger(input_name="pages")
 def build_index(pages: list) -> str:
@@ -218,7 +188,8 @@ def build_index(pages: list) -> str:
                 'filename': page["filename"],
                 'url': page["url"],
                 'title': page["title"],
-                'date': page["date"]
+                'date': page["date"],
+                'nid': page['nid']
             }
         )
         documents.append(document)
@@ -246,21 +217,97 @@ def build_index(pages: list) -> str:
 
     return "Storage name: /tmp/storage/" + date
 
-@app.function_name(name="get_page_updates")
-@app.schedule(schedule="0 0 * * 0", arg_name="timer", run_on_startup=True)
-def get_page_updates(timer: func.TimerRequest) -> None:
-    date = datetime.now().strftime("%Y-%m-%d")
-    logging.info('Python timer trigger function ran at %s', date)
-    pages = []
+# @app.function_name(name="get_page_updates")
+# @app.schedule(schedule="0 0 * * 0", arg_name="timer", run_on_startup=True)
+# def get_page_updates(timer: func.TimerRequest) -> None:
+#     date = datetime.now().strftime("%Y-%m-%d")
+#     logging.info('Python timer trigger function ran at %s', date)
+#     pages = []
 
-    try:
-        r = _get_and_save(f"{domain}/en/rest/updated-ids/week", f"updated-ids-{date}.json")
-        logging.info("Getting all ids that need to be processed...")
-        for d in r:
-            _get_and_save(f"{domain}/en/rest/page-by-id/{d['nid']}", f"updated/{date}/{d['type']}/en/{d['nid']}.json")
-            _get_and_save(f"{domain}/fr/rest/page-by-id/{d['nid']}", f"updated/{date}/{d['type']}/fr/{d['nid']}.json")
-    except Exception as e:
-        logging.error("Unable to send request and/or parse json. Error:" + str(e))
+#     try:
+#         r = _get_and_save(f"{domain}/en/rest/updated-ids/week", f"updated-ids-{date}.json")
+#         logging.info("Getting all ids that need to be processed...")
+#         for d in r:
+#             _get_and_save(f"{domain}/en/rest/page-by-id/{d['nid']}", f"updated/{date}/{d['type']}/en/{d['nid']}.json")
+#             _get_and_save(f"{domain}/fr/rest/page-by-id/{d['nid']}", f"updated/{date}/{d['type']}/fr/{d['nid']}.json")
+#     except Exception as e:
+#         logging.error("Unable to send request and/or parse json. Error:" + str(e))
+
+@app.function_name(name="rebuild_index")
+@app.route(route="rebuild")
+def rebuild_index(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("Triggered index rebuild ... fetching most recent index.")
+    container_client = blob_service_client.get_container_client("indices")
+     # Ensure the tmp directory exists  
+    os.makedirs('/tmp/latest', exist_ok=True)  
+  
+    '''load index locally'''
+    blob_list = container_client.list_blobs(name_starts_with="latest")  
+    for blob in blob_list:
+        logging.info(f"CURRENT BLOB: {blob.name}")   
+        # Construct the full file path  
+        download_file_path = os.path.join('/tmp', blob.name)  
+
+         # Skip download if file already exists  
+        if os.path.exists(download_file_path):  
+            logging.info(f"File {download_file_path} already exists. Skipping download.")  
+            continue
+          
+        # Download the blob to a local file  
+        blob_client = container_client.get_blob_client(blob.name)  
+        with open(download_file_path, "wb") as download_file:  
+            download_file.write(blob_client.download_blob().readall())  
+
+    #TODO: reuse the all the files 
+    # Temp loading files directly to test...
+    pages = _get_pages_as_json("updated", "2023-11-26")
+    nids_set = {str(page['nid']) for page in pages}
+
+
+    '''load index in memory'''
+    start = time.time()
+    set_global_service_context(_get_service_context("gpt-4", 8192))
+    storage_context = StorageContext.from_defaults(persist_dir=os.path.join("/tmp", "latest"))
+    index = load_index_from_storage(storage_context=storage_context)
+    end = time.time()
+    logging.info("Took {} seconds to load index/storage context.".format(end-start))
+
+    '''identify newly updated nodes and delete them, we will be re-building the new index and updating it instead..'''
+    for k,v in storage_context.docstore.docs.items():
+        filename = v.metadata['filename']
+        match = re.search(r'(\d+)\.json$', filename)  
+        number = match.group(1) if match else None
+        if number in nids_set:
+            index.delete_ref_doc(k, delete_from_docstore=True)
+
+    
+    '''update the index with the new documents'''
+    for page in pages:
+        # https://gpt-index.readthedocs.io/en/v0.6.34/how_to/customization/custom_documents.html
+        document = Document(
+            text=str(page["body"]).replace("\n", " "),
+            metadata={ # type: ignore
+                'filename': page["filename"],
+                'url': page["url"],
+                'title': page["title"],
+                'date': page["date"],
+                'nid': page['nid']
+            }
+        )
+        index.insert(document)
+
+    '''persist the updated index'''
+    index.storage_context.persist(persist_dir="/tmp/storage/latest")
+
+    # writing files to Azure Storage
+    container_client = blob_service_client.get_container_client("indices")
+    for file in glob.glob(f"/tmp/storage/latest/*"):
+        blob_name = os.path.basename(file)
+        blob_client = container_client.get_blob_client("latest/" + blob_name)
+        with open(file, "rb") as data:
+            blob_client.upload_blob(data, overwrite=True)
+
+    return func.HttpResponse("Index rebuild triggered and files downloaded.", status_code=200) 
 
 def _get_service_context(model: str, context_window: int, num_output: int = 800, temperature: float = 0.7,) -> "ServiceContext":
     # using same dep as model name because of an older bug in langchains lib (now fixed I believe)
@@ -286,3 +333,36 @@ def _get_llm(model: str, temperature: float = 0.7):
 
 def _get_llm_predictor(llm) -> LLMPredictor:
     return LLMPredictor(llm=llm,)
+ 
+def _get_pages_as_json(dir: str, date: str) -> list:
+    pages = []
+    container_client = blob_service_client.get_container_client("sscplusdata")
+    blobs = container_client.list_blobs(dir + "/" + date + "/")
+
+    ignore_selectors = ['div.comment-login-message', 'section.block-date-modified-block']
+
+    for blob in blobs:
+        blob_client = container_client.get_blob_client(blob) # type: ignore
+        # Download the blob data and decode it to string
+        data = blob_client.download_blob().readall().decode('utf-8')
+        if data is not None:
+            raw = json.loads(data)
+            if isinstance(raw, list) and raw:
+                raw = raw[0] # sometimes the object is boxed into an array, not useful to us
+            if isinstance(raw, dict):
+                page = {}
+                soup = BeautifulSoup(raw["body"], "html.parser")
+                # remove useless tags like date modified and login blocks (see example in 336 parsed data vs non parsed)
+                for selector in ignore_selectors:
+                     for s in soup.select(selector):
+                         s.decompose()
+
+                page["body"] = ' '.join(soup.stripped_strings)
+                page["title"] = str(raw["title"]).strip()
+                page["url"] = str(raw["url"]).strip()
+                page["date"] = str(raw["date"]).strip()
+                page["filename"] = blob_client.blob_name
+                page["nid"] = str(raw['nid']).strip()
+
+                pages.append(page)  
+    return pages
