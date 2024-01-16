@@ -10,7 +10,7 @@ cd live/sandbox/ssplus-data-fetch
 terragrunt plan --terragrunt-source ~/git/sscplus-data-fetch/terraform
 ```
 
-Etc ...
+If requested for `package.zip` localtion simply create one first and then provide directory path (`zip package.zip function_app.py requirements.txt host.json`)
 
 ## dev setup
 

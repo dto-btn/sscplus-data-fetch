@@ -30,6 +30,40 @@ resource "azurerm_storage_account" "main" {
   }
 }
 
+resource "azurerm_data_protection_backup_vault" "main" {
+  name                = "${lower(var.project_name_short)}-backup-vault"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  datastore_type      = "VaultStore"
+  redundancy          = "LocallyRedundant"
+
+  identity {
+    type = "SystemAssigned"
+  }
+}
+
+resource "azurerm_role_assignment" "storage_account_role" {  
+  scope                = azurerm_storage_account.main.id
+  role_definition_name = "Storage Account Backup Contributor"
+  principal_id         = azurerm_data_protection_backup_vault.main.identity[0].principal_id
+}
+
+resource "azurerm_data_protection_backup_policy_blob_storage" "main" {
+  name               = "${lower(var.project_name_short)}-backup-policy"
+  vault_id           = azurerm_data_protection_backup_vault.main.id
+  retention_duration = "P90D"
+}
+
+resource "azurerm_data_protection_backup_instance_blob_storage" "main" {
+  name               = "${lower(var.project_name_short)}-backup-instance"
+  vault_id           = azurerm_data_protection_backup_vault.main.id
+  location           = azurerm_resource_group.main.location
+  storage_account_id = azurerm_storage_account.main.id
+  backup_policy_id   = azurerm_data_protection_backup_policy_blob_storage.main.id
+
+  depends_on = [azurerm_role_assignment.storage_account_role]
+}
+
 resource "azurerm_storage_container" "main" {
   name                  = "sscplusdata"
   storage_account_name  = azurerm_storage_account.main.name
