@@ -131,7 +131,7 @@ def download_page(page: dict):
 
 # getting loads of connection terminated by fw or lb over their aks instances
 # this helps greatly, but still need a net to catch missing ids.
-@retry(stop=stop_after_attempt(5), wait=wait_fixed(3)) 
+@retry(stop=stop_after_attempt(5), wait=wait_fixed(3))
 def _get_and_save(url, blob_name):
     response = requests.get(url, verify=False)
     blob_client = blob_service_client.get_blob_client("sscplusdata", blob_name)
@@ -145,7 +145,7 @@ async def durable_build_index(req: func.HttpRequest, client) -> func.HttpRespons
     '''
     build an index based on the date passed in parameter
     '''
-    # get the parameter from the request  
+    # get the parameter from the request
     date = req.params.get('date')
 
     if date:
@@ -154,10 +154,10 @@ async def durable_build_index(req: func.HttpRequest, client) -> func.HttpRespons
         response = client.create_check_status_response(req, instance_id)
         return response
 
-    return func.HttpResponse(  
-            "No date provided",  
-            status_code=400  
-        ) 
+    return func.HttpResponse(
+            "No date provided",
+            status_code=400
+        )
 
 # Orchestrator
 @app.orchestration_trigger(context_name="context")
@@ -165,7 +165,7 @@ def build_index_orc(context: df.DurableOrchestrationContext):
     # Get the input data (date)
     date = context.get_input()
     pages = yield context.call_activity("load_pages_as_json", date)
-    if pages is not None: 
+    if pages is not None:
         yield context.call_activity("build_index", pages)
         return f"Finished creating index (with name: {date})!"
 
@@ -198,7 +198,7 @@ def build_index(pages: list) -> str:
 
     """
     store documents into a vector store.
-    note MS CognitiveSearchVectorStore: 
+    note MS CognitiveSearchVectorStore:
         * https://learn.microsoft.com/en-us/azure/search/search-get-started-vector
         * https://gpt-index.readthedocs.io/en/stable/community/integrations/vector_stores.html#using-a-vector-store-as-an-index
     """
@@ -233,25 +233,26 @@ def get_page_updates(timer: func.TimerRequest) -> None:
         logging.error("Unable to send request and/or parse json. Error:" + str(e))
 
     container_client = blob_service_client.get_container_client("indices")
-    # Ensure the tmp directory exists  
-    os.makedirs('/tmp/latest', exist_ok=True)  
-  
-    '''load index locally'''
-    blob_list = container_client.list_blobs(name_starts_with="latest")  
-    for blob in blob_list:
-        logging.info(f"CURRENT BLOB: {blob.name}")   
-        # Construct the full file path  
-        download_file_path = os.path.join('/tmp', blob.name)  
 
-         # Skip download if file already exists  
-        if os.path.exists(download_file_path):  
-            logging.info(f"File {download_file_path} already exists. Skipping download.")  
+    # Ensure the tmp directory exists
+    os.makedirs('/tmp/latest', exist_ok=True)
+
+    '''load index locally'''
+    blob_list = container_client.list_blobs(name_starts_with="latest")
+    for blob in blob_list:
+        logging.info(f"CURRENT BLOB: {blob.name}")
+        # Construct the full file path
+        download_file_path = os.path.join('/tmp', blob.name)
+
+         # Skip download if file already exists
+        if os.path.exists(download_file_path):
+            logging.info(f"File {download_file_path} already exists. Skipping download.")
             continue
-          
-        # Download the blob to a local file  
-        blob_client = container_client.get_blob_client(blob.name)  
-        with open(download_file_path, "wb") as download_file:  
-            download_file.write(blob_client.download_blob().readall())  
+
+        # Download the blob to a local file
+        blob_client = container_client.get_blob_client(blob.name)
+        with open(download_file_path, "wb") as download_file:
+            download_file.write(blob_client.download_blob().readall())
 
     #TODO: reuse the all the files from above instead of re-loading them this way, inefficient.. might be useless to store them in the first place...
     pages = _get_pages_as_json("updated", date)
@@ -268,12 +269,12 @@ def get_page_updates(timer: func.TimerRequest) -> None:
     '''identify newly updated nodes and delete them, we will be re-building the new index and updating it instead..'''
     for k,v in storage_context.docstore.docs.items():
         filename = v.metadata['filename']
-        match = re.search(r'(\d+)\.json$', filename)  
+        match = re.search(r'(\d+)\.json$', filename)
         number = match.group(1) if match else None
         if number in nids_set:
             index.delete_ref_doc(k, delete_from_docstore=True)
 
-    
+
     '''update the index with the new documents'''
     for page in pages:
         # https://gpt-index.readthedocs.io/en/v0.6.34/how_to/customization/custom_documents.html
@@ -325,7 +326,7 @@ def _get_llm(model: str, temperature: float = 0.7):
 
 def _get_llm_predictor(llm) -> LLMPredictor:
     return LLMPredictor(llm=llm,)
- 
+
 def _get_pages_as_json(dir: str, date: str) -> list:
     pages = []
     container_client = blob_service_client.get_container_client("sscplusdata")
@@ -356,5 +357,5 @@ def _get_pages_as_json(dir: str, date: str) -> list:
                 page["filename"] = blob_client.blob_name
                 page["nid"] = str(raw['nid']).strip()
 
-                pages.append(page)  
+                pages.append(page)
     return pages
