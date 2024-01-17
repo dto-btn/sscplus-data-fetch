@@ -21,7 +21,9 @@ from llama_index import (Document, LLMPredictor, PromptHelper, ServiceContext, S
 from llama_index.callbacks import CallbackManager, LlamaDebugHandler
 from tenacity import retry, stop_after_attempt, wait_fixed
 import glob
-
+from azure.mgmt.web import WebSiteManagementClient
+from azure.identity import DefaultAzureCredential
+from azure.mgmt.app import ContainerAppsAPIClient
 
 load_dotenv()
 
@@ -217,8 +219,7 @@ def build_index(pages: list) -> str:
 
     return "Storage name: /tmp/storage/" + date
 
-@app.function_name(name="get_page_updates")
-@app.schedule(schedule="0 0 * * 0", arg_name="timer", run_on_startup=True)
+#OUCHHCHCHCHC@app.schedule(schedule="0 0 * * 0", arg_name="timer", run_on_startup=True)
 def get_page_updates(timer: func.TimerRequest) -> None:
     date = datetime.now().strftime("%Y-%m-%d")
     logging.info(' [rebuild index] Timed triggered function ran at %s', date)
@@ -359,3 +360,52 @@ def _get_pages_as_json(dir: str, date: str) -> list:
 
                 pages.append(page)
     return pages
+
+@app.schedule(schedule="0 0 * * 0", arg_name="timer", run_on_startup=True)
+def update_index_and_restart_containers(timer: func.TimerRequest) -> None:
+    # todo copy latest folder to the shared folder of that group containers...
+    credential = DefaultAzureCredential()
+    token = credential.get_token("https://management.azure.com/.default")
+    headers = {"Authorization": f"Bearer {token.token}"}
+    # # Construct the URL to restart the container app
+    # POST https://management.azure.com/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ContainerInstance/containerGroups/{containerGroupName}/restart?api-version=2023-05-01
+    subscriptionId = os.getenv("CONTAINER_SUB_ID")
+    resourceGroupName = os.getenv("CONTAINER_RG_NAME")
+    containerAppName = os.getenv("CONTAINER_APP_NAME")
+    url_stop = f"https://management.azure.com/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.App/containerApps/{containerAppName}/stop?api-version=2023-08-01-preview"
+    # Make the POST request to stop the container app
+    response_stop = requests.post(url_stop, headers=headers)
+
+    # Check the response
+    if response_stop.status_code == 202:
+        print(f'Stop command sent to container app: {containerAppName}')
+        # Azure may provide an Azure-AsyncOperation header with a URL to poll for operation status
+        async_url = response_stop.headers.get('Azure-AsyncOperation')
+        if async_url:
+            while True:
+                response_status = requests.get(async_url, headers=headers)
+                status = response_status.json().get('status')
+                if status == 'Succeeded':
+                    print(f'Container app {containerAppName} has successfully stopped.')
+                    break
+                elif status == 'Failed':
+                    print(f'Failed to stop container app: {response_status.text}')
+                    break
+                time.sleep(10)  # Wait before polling again
+        else:
+            print('No async operation URL provided. Unable to check stop status.')
+            time.sleep(30)
+    else:
+        print(f'Failed to send stop command to container app: {response_stop.text} and {response_stop.status_code}')
+
+    # After stopping, construct the URL to start the container app
+    url_start = f"https://management.azure.com/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.App/containerApps/{containerAppName}/start?api-version=2023-08-01-preview"
+
+    # Make the POST request to start the container app
+    response_start = requests.post(url_start, headers=headers)
+
+    # Check the response for the start operation
+    if response_start.status_code == 202:
+        print(f'Start command sent to container app: {containerAppName}')
+    else:
+        print(f'Failed to send start command to container app: {response_start.text} and {response_start.status_code}')
