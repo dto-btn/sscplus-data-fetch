@@ -4,7 +4,6 @@ name: Zip app contents
 
 on:
   push:
-    branches: ["11-add-a-simple-github-action-that-on-main-it-will-run-a-zip-command-and-add-the-packagezip-as-a-asset"]
 
 jobs:
   build:
@@ -29,5 +28,5 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: release-artifact
+        name: zip-artifact
         path: package.zip
