@@ -126,6 +126,8 @@ resource "azurerm_linux_function_app" "main" {
     "StorageConnectionString"        = azurerm_storage_account.main.primary_connection_string
     "AzureOpenAIEndpoint"            = data.azurerm_cognitive_account.ai.endpoint
     "AzureOpenAIKey"                 = data.azurerm_cognitive_account.ai.primary_access_key
+    "FILESHARE_CONNECTION_STRING"    = var.fileshare_connection_string
+    "FILESHARE_NAME"                 = var.fileshare_name
   }
 
   virtual_network_subnet_id = data.azurerm_subnet.subscription-vnet-sub.id

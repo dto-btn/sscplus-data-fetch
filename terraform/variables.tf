@@ -41,3 +41,13 @@ variable "openai_rg" {
 variable "openai_name" {
     type = string
 }
+
+variable "fileshare_name" {
+    type = string
+    description = "the fileshare name that will be used to copy the files over. this is the fileshare that is used by the chatbot"
+}
+
+variable "fileshare_connection_string" {
+    type = string
+    description = "connection string for fs above"
+}
