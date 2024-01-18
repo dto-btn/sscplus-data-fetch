@@ -50,4 +50,5 @@ variable "fileshare_name" {
 variable "fileshare_connection_string" {
     type = string
     description = "connection string for fs above"
+    sensitive   = true
 }

@@ -217,7 +217,7 @@ def build_index(pages: list) -> str:
 
     return "Storage name: /tmp/storage/" + date
 
-@app.schedule(schedule="0 0 * * 0", arg_name="timer", run_on_startup=True)
+@app.schedule(schedule="0 0 * * 6", arg_name="timer", run_on_startup=True)
 def get_page_updates(timer: func.TimerRequest) -> None:
     date = datetime.now().strftime("%Y-%m-%d")
     logging.info(' [rebuild index] Timed triggered function ran at %s', date)
