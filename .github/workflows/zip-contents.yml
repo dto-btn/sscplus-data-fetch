@@ -3,7 +3,9 @@
 name: Zip app contents
 
 on:
-  push:
+  release:
+    types:
+      - created
 
 jobs:
   build:
@@ -25,8 +27,12 @@ jobs:
       run: |
         zip -r package.zip function_app.py requirements.txt host.json
      
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
       with:
-        name: zip-artifact
-        path: package.zip
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./package.zip
+        asset_name: package.zip
+        asset_content_type: application/zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
