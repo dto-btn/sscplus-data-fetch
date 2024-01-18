@@ -1,29 +1,27 @@
+import glob
 import json  # bourne
 import logging
 import os
-from datetime import datetime
-import time
 import re
+import time
+from datetime import datetime
 
 import azure.durable_functions as df
 import azure.functions as func
+import requests
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient
+from azure.storage.fileshare import ShareServiceClient
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-import openai
-import requests
-from azure.storage.blob import BlobServiceClient
-from llama_index.llms import AzureOpenAI
 from langchain.chat_models import AzureChatOpenAI
 from langchain.embeddings import AzureOpenAIEmbeddings
-from llama_index import (Document, LLMPredictor, PromptHelper, ServiceContext, StorageContext,
-                         VectorStoreIndex, load_index_from_storage,
-                         set_global_service_context)
+from llama_index import (Document, LLMPredictor, PromptHelper, ServiceContext,
+                         StorageContext, VectorStoreIndex,
+                         load_index_from_storage, set_global_service_context)
 from llama_index.callbacks import CallbackManager, LlamaDebugHandler
+from llama_index.llms import AzureOpenAI
 from tenacity import retry, stop_after_attempt, wait_fixed
-import glob
-from azure.mgmt.web import WebSiteManagementClient
-from azure.identity import DefaultAzureCredential
-from azure.mgmt.app import ContainerAppsAPIClient
 
 load_dotenv()
 
@@ -219,7 +217,7 @@ def build_index(pages: list) -> str:
 
     return "Storage name: /tmp/storage/" + date
 
-#OUCHHCHCHCHC@app.schedule(schedule="0 0 * * 0", arg_name="timer", run_on_startup=True)
+@app.schedule(schedule="0 0 * * 0", arg_name="timer", run_on_startup=True)
 def get_page_updates(timer: func.TimerRequest) -> None:
     date = datetime.now().strftime("%Y-%m-%d")
     logging.info(' [rebuild index] Timed triggered function ran at %s', date)
@@ -363,7 +361,18 @@ def _get_pages_as_json(dir: str, date: str) -> list:
 
 @app.schedule(schedule="0 0 * * 0", arg_name="timer", run_on_startup=True)
 def update_index_and_restart_containers(timer: func.TimerRequest) -> None:
-    # todo copy latest folder to the shared folder of that group containers...
+    """ Copy latest index to a fileshare used by the chatbot and then restart all the containers so they reload the index"""
+    service = ShareServiceClient.from_connection_string(conn_str=str(os.getenv("FILESHARE_CONNECTION_STRING")))
+    share_client = service.get_share_client(share=str(os.getenv("FILESHARE_NAME")))
+
+    container_client = blob_service_client.get_container_client("indices")
+    for blob in container_client.list_blobs("latest/"):
+        blob_name = blob.name
+        blob_client = container_client.get_blob_client(blob=blob_name)
+        download_stream = blob_client.download_blob()
+        file_client = share_client.get_file_client(file_path=blob_name)
+        file_client.upload_file(download_stream) # type: ignore
+
     credential = DefaultAzureCredential()
     token = credential.get_token("https://management.azure.com/.default")
     headers = {"Authorization": f"Bearer {token.token}"}

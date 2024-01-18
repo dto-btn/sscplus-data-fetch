@@ -7,8 +7,7 @@ azure-identity
 azure-core
 azure-keyvault-secrets
 azure-storage-blob
-azure-mgmt-web
-azure-mgmt-app
+azure-storage-file-share
 python-dotenv
 msal
 llama-index
