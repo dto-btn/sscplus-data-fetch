@@ -135,4 +135,8 @@ resource "azurerm_linux_function_app" "main" {
   # just run zip package.zip function_app.py requirements.txt host.json
   zip_deploy_file = var.zip_deploy_file
 
+  identity {
+    type = "SystemAssigned"
+  }
+
 }
