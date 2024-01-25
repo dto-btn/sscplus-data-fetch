@@ -14,8 +14,8 @@ from azure.storage.blob import BlobServiceClient
 from azure.storage.fileshare import ShareServiceClient
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from langchain.chat_models import AzureChatOpenAI
-from langchain.embeddings import AzureOpenAIEmbeddings
+from langchain_openai import AzureChatOpenAI
+from langchain_openai import AzureOpenAIEmbeddings
 from llama_index import (Document, LLMPredictor, PromptHelper, ServiceContext,
                          StorageContext, VectorStoreIndex,
                          load_index_from_storage, set_global_service_context)
